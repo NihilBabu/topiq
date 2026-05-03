@@ -1,6 +1,6 @@
 {
   "name": "topiq-explorer",
-  "version": "1.3.2",
+  "version": "1.3.3",
   "description": "A cross-platform desktop application for exploring and managing Apache Kafka clusters",
   "main": "dist-electron/main.js",
   "author": "Nihil Babu <babunihil@gmail.com>",
