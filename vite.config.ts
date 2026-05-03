@@ -15,6 +15,7 @@ export default defineConfig({
         },
         vite: {
           build: {
+            target: 'node22',
             outDir: 'dist-electron',
             rollupOptions: {
               external: ['electron', 'electron-store', 'kafkajs', '@kafkajs/confluent-schema-registry']
@@ -29,6 +30,7 @@ export default defineConfig({
         },
         vite: {
           build: {
+            target: 'node22',
             outDir: 'dist-electron'
           }
         }
