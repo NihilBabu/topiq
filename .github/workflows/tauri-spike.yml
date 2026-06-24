@@ -39,7 +39,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf \
-            cmake nasm perl build-essential
+            cmake nasm perl build-essential \
+            libsasl2-dev libcurl4-openssl-dev
+          # libsasl2-dev + libcurl: on Linux, librdkafka's CMake auto-enables SASL-Cyrus
+          # and curl/OAUTHBEARER and hard-requires their headers. macOS/Windows don't take
+          # that path, so this is a Linux-only requirement (a real spike finding).
 
       - name: macOS deps (nasm for vendored OpenSSL)
         if: matrix.os == 'macos-latest'

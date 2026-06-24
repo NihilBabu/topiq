@@ -12,9 +12,17 @@ The migration's two real risks (from the plan):
 1. **librdkafka builds/links across all 3 OSes.** rust-rdkafka wraps a C library;
    the `bundled` build vendors librdkafka **and** OpenSSL from source via cmake.
    The `.github/workflows/tauri-spike.yml` matrix compiles it on macOS, Windows and
-   Linux. **Green matrix = risk retired.** The known weak spot is the Windows
-   vendored-OpenSSL build (needs `nasm` + `perl`); if it fails, fall back to a
-   system librdkafka/OpenSSL.
+   Linux. **Green matrix = risk retired.**
+
+   **Empirical CI findings (this is the point of the spike):**
+   - ✅ **macOS + Windows passed** — including vendored OpenSSL on Windows (`nasm`
+     installed), which was the *predicted* weak spot but built fine.
+   - ⚠️ **Linux needed two extra `-dev` headers.** librdkafka's CMake auto-enables
+     SASL-Cyrus and curl/OAUTHBEARER on Linux and hard-requires their headers, so
+     the leg failed until `libsasl2-dev` + `libcurl4-openssl-dev` were added. The
+     other two OSes don't take that code path. (We only need PLAIN/SCRAM/SSL, so an
+     alternative is to disable those librdkafka cmake options instead of installing
+     the headers.)
 2. **Linux WebKitGTK renders the real UI acceptably.** This spike's HTML harness is
    trivial, so it does *not* settle risk #2 — that still needs the real React UI
    loaded on a Linux/WebKitGTK box. Out of scope here; called out so it isn't
