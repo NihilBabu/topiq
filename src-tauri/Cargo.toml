@@ -1,0 +1,37 @@
+[package]
+name = "topiq-spike"
+version = "0.1.0"
+description = "Tauri + rust-rdkafka spike for topiq-explorer (Electron -> Tauri de-risking)"
+edition = "2021"
+rust-version = "1.80"
+
+[lib]
+name = "topiq_spike"
+path = "src/lib.rs"
+
+[[bin]]
+name = "topiq-spike"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread"] }
+regex = "1"
+# Build strategy is chosen via the [features] below — see them for why.
+rdkafka = { version = "0.37", default-features = false }
+
+[features]
+# `bundled` compiles a vendored librdkafka + OpenSSL from source via cmake, giving
+# a self-contained binary with no system Kafka/SSL dependency. This is what CI and
+# real releases use, and it is exactly the thing this spike must prove links on all
+# three OSes (migration risk #1).
+default = ["bundled"]
+bundled = ["rdkafka/cmake-build", "rdkafka/ssl-vendored"]
+# `system` links an already-installed librdkafka (brew/apt) via pkg-config. Fast
+# local dev only:  cargo test --no-default-features --features system
+system = ["rdkafka/dynamic-linking"]

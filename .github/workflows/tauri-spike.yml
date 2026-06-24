@@ -1,0 +1,65 @@
+name: Tauri Spike (build matrix)
+
+# Proves migration risk #1: that rust-rdkafka's vendored librdkafka + OpenSSL
+# compile and link on macOS, Windows and Linux. Compile-only (no bundling) plus
+# the pure-logic unit tests. The KNOWN risk to watch is the Windows vendored
+# OpenSSL build (needs nasm + perl) — if it fails, fall back to a system
+# librdkafka/OpenSSL (see docs/TAURI-SPIKE.md).
+on:
+  push:
+    branches: ["spike/**"]
+    paths:
+      - "src-tauri/**"
+      - "spike-ui/**"
+      - ".github/workflows/tauri-spike.yml"
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    name: build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-22.04, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo + target
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Linux deps (Tauri webview + cmake/nasm/perl for vendored build)
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf \
+            cmake nasm perl build-essential
+
+      - name: macOS deps (nasm for vendored OpenSSL)
+        if: matrix.os == 'macos-latest'
+        run: brew install nasm
+
+      - name: Windows deps (nasm for vendored OpenSSL; cmake + perl preinstalled)
+        if: matrix.os == 'windows-latest'
+        run: choco install nasm -y
+
+      - name: Unit tests (pure logic)
+        working-directory: src-tauri
+        run: cargo test --release --lib
+
+      - name: Build (compile + link vendored librdkafka)
+        working-directory: src-tauri
+        run: cargo build --release --bin topiq-spike
+
+      - name: Report binary size
+        shell: bash
+        working-directory: src-tauri
+        run: |
+          echo "### Spike binary — ${{ matrix.os }}" >> "$GITHUB_STEP_SUMMARY"
+          ls -lh target/release/topiq-spike target/release/topiq-spike.exe 2>/dev/null >> "$GITHUB_STEP_SUMMARY" || true
