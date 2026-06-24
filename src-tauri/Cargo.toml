@@ -31,7 +31,11 @@ rdkafka = { version = "0.37", default-features = false }
 # real releases use, and it is exactly the thing this spike must prove links on all
 # three OSes (migration risk #1).
 default = ["bundled"]
-bundled = ["rdkafka/cmake-build", "rdkafka/ssl-vendored"]
+# libz + zstd are re-enabled explicitly: rdkafka's defaults (which include them)
+# are off here, and without them the vendored librdkafka ships with gzip/zstd
+# decompression disabled — it would silently fail to read those (very common)
+# compressed topics, while still linking cleanly in CI and the `system` smoke test.
+bundled = ["rdkafka/cmake-build", "rdkafka/ssl-vendored", "rdkafka/libz", "rdkafka/zstd"]
 # `system` links an already-installed librdkafka (brew/apt) via pkg-config. Fast
 # local dev only:  cargo test --no-default-features --features system
 system = ["rdkafka/dynamic-linking"]

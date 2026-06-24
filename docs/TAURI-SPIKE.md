@@ -86,6 +86,12 @@ export const kafka = {
 }
 ```
 
+> **Parity note for the full migration:** Electron's IPC layer (`validateMessageOptions`)
+> *rejected* a bad `limit`, non-integer/negative `partition`, or non-numeric `fromOffset`
+> with an error. The Rust port clamps `limit` and rejects a non-digit `fromOffset` but is
+> otherwise lenient; restore explicit `Err` returns in the real commands to keep the
+> validation contract the React components rely on.
+
 ## Decision gate
 
 Pass the CI matrix + a local broker smoke test → commit to the full port. If

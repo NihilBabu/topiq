@@ -99,6 +99,30 @@ pub fn next_offset(has_more: bool, last_offset: Option<i64>) -> Option<String> {
     }
 }
 
+/// Group header (key, value) pairs by key, comma-join duplicates, then truncate.
+/// Kafka allows repeated header keys; kafkajs collapses them into a `Buffer[]` and
+/// `value.toString()` comma-joins before truncation, so a plain map insert (last
+/// value wins) would silently drop earlier values. This mirrors the Electron output.
+pub fn join_headers<I>(pairs: I) -> std::collections::HashMap<String, String>
+where
+    I: IntoIterator<Item = (String, String)>,
+{
+    use std::collections::HashMap;
+    let mut grouped: HashMap<String, Vec<String>> = HashMap::new();
+    for (k, v) in pairs {
+        grouped.entry(k).or_default().push(v);
+    }
+    grouped
+        .into_iter()
+        .map(|(k, vals)| {
+            (
+                k,
+                truncate(Some(&vals.join(",")), MAX_HEADER_VALUE_SIZE).unwrap_or_default(),
+            )
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -149,5 +173,16 @@ mod tests {
         assert_eq!(next_offset(true, Some(41)).as_deref(), Some("42"));
         assert_eq!(next_offset(false, Some(41)), None);
         assert_eq!(next_offset(true, None), None);
+    }
+
+    #[test]
+    fn join_headers_preserves_duplicate_keys() {
+        let h = join_headers([
+            ("k".to_string(), "a".to_string()),
+            ("k".to_string(), "b".to_string()),
+            ("x".to_string(), "y".to_string()),
+        ]);
+        assert_eq!(h.get("k").unwrap(), "a,b");
+        assert_eq!(h.get("x").unwrap(), "y");
     }
 }

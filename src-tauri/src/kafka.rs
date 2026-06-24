@@ -14,8 +14,8 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::util::{
-    next_offset, sanitize_error, sasl_mechanism, security_protocol, truncate,
-    MAX_HEADER_VALUE_SIZE, MAX_KEY_SIZE, MAX_VALUE_SIZE,
+    join_headers, next_offset, sanitize_error, sasl_mechanism, security_protocol, truncate,
+    MAX_KEY_SIZE, MAX_VALUE_SIZE,
 };
 
 // ---- connection state -------------------------------------------------------
@@ -148,6 +148,9 @@ pub fn build_config(conn: &KafkaConnection) -> Result<ClientConfig, String> {
     );
 
     if let Some(sasl) = &conn.sasl {
+        // ponytail: secrets are set as plain string config values, which librdkafka
+        // never range-validates, so its value-echoing config errors can't leak them
+        // past sanitize_error. Keep any future credential keys string-valued too.
         cfg.set("sasl.mechanism", sasl_mechanism(&sasl.mechanism)?);
         cfg.set("sasl.username", sasl.username.clone());
         cfg.set("sasl.password", sasl.password.clone());
@@ -296,6 +299,11 @@ fn fetch_messages(
         .iter()
         .find(|t| t.name() == topic)
         .ok_or_else(|| format!("Topic not found: {topic}"))?;
+    // An unknown topic comes back as an entry with an error + zero partitions; surface
+    // it instead of returning a silent empty page (the Electron admin path errors here).
+    if let Some(err) = topic_md.error() {
+        return Err(sanitize_error(&format!("Topic error: {err:?}")));
+    }
     let mut partitions: Vec<i32> = topic_md.partitions().iter().map(|p| p.id()).collect();
     if let Some(p) = opts.partition {
         partitions.retain(|&x| x == p);
@@ -306,11 +314,17 @@ fn fetch_messages(
     }
 
     // Resolve seek offsets and sum the expected message count (capped at limit).
-    let ts_seek = match opts.from_timestamp {
+    // `filter(ts > 0)` mirrors the TS `if (fromTimestamp)` truthiness (0 falls through).
+    let ts_seek = match opts.from_timestamp.filter(|&ts| ts > 0) {
         Some(ts) => Some(resolve_timestamps(&consumer, topic, &partitions, ts)?),
         None => None,
     };
-    let from_offset = opts.from_offset.as_ref().and_then(|s| s.parse::<i64>().ok());
+    // Mirror Electron's validateMessageOptions: fromOffset must be all digits — reject
+    // negatives/garbage with an error rather than silently starting from the low offset.
+    let from_offset = match opts.from_offset.as_deref() {
+        Some(s) => Some(s.parse::<u64>().map(|v| v as i64).map_err(|_| "Invalid offset".to_string())?),
+        None => None,
+    };
 
     let mut assignment = TopicPartitionList::new();
     let mut total_expected: i64 = 0;
@@ -384,20 +398,22 @@ fn fetch_messages(
 }
 
 fn to_out_message(m: &rdkafka::message::BorrowedMessage<'_>) -> OutMessage {
-    let mut headers = HashMap::new();
-    if let Some(hs) = m.headers() {
-        for i in 0..hs.count() {
-            let h = hs.get(i);
-            let value = h
-                .value
-                .map(|b| String::from_utf8_lossy(b).into_owned())
-                .unwrap_or_default();
-            headers.insert(
-                h.key.to_string(),
-                truncate(Some(&value), MAX_HEADER_VALUE_SIZE).unwrap_or_default(),
-            );
-        }
-    }
+    let header_pairs: Vec<(String, String)> = m
+        .headers()
+        .map(|hs| {
+            (0..hs.count())
+                .map(|i| {
+                    let h = hs.get(i);
+                    let value = h
+                        .value
+                        .map(|b| String::from_utf8_lossy(b).into_owned())
+                        .unwrap_or_default();
+                    (h.key.to_string(), value)
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let headers = join_headers(header_pairs);
     let key = m.key().map(|b| String::from_utf8_lossy(b).into_owned());
     let value = m.payload().map(|b| String::from_utf8_lossy(b).into_owned());
     let timestamp = m
