@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Topiq Tauri Spike</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 24px; max-width: 760px; color: #e5e5e5; background: #0a0a0b; }
+      h1 { font-size: 18px; }
+      label { font-size: 12px; color: #9aa0aa; display: block; margin-top: 8px; }
+      input { width: 100%; padding: 6px; margin: 2px 0; background: #161617; color: #eee; border: 1px solid #333; border-radius: 6px; box-sizing: border-box; }
+      button { padding: 8px 14px; margin: 8px 8px 0 0; cursor: pointer; border-radius: 6px; border: 1px solid #444; background: #1d1d20; color: #eee; }
+      pre { background: #111; padding: 12px; border-radius: 8px; white-space: pre-wrap; word-break: break-word; max-height: 340px; overflow: auto; margin-top: 12px; }
+      .row { display: flex; gap: 12px; }
+      .row > div { flex: 1; }
+    </style>
+  </head>
+  <body>
+    <h1>topiq-explorer — Tauri + rdkafka spike</h1>
+    <p>Throwaway harness proving <code>connect</code> / <code>get_topics</code> / <code>get_messages</code> against a real broker. See <code>docs/TAURI-SPIKE.md</code>.</p>
+
+    <label>Connection id</label>
+    <input id="id" value="spike-1" />
+    <label>Brokers (comma-separated)</label>
+    <input id="brokers" value="localhost:9092" />
+    <div class="row">
+      <div>
+        <label>SASL mechanism (blank = none)</label>
+        <input id="mech" placeholder="plain | scram-sha-256 | scram-sha-512" />
+      </div>
+      <div>
+        <label>Use SSL</label>
+        <input type="checkbox" id="ssl" style="width:auto" />
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label>SASL username</label>
+        <input id="user" />
+      </div>
+      <div>
+        <label>SASL password</label>
+        <input id="pass" type="password" />
+      </div>
+    </div>
+
+    <button onclick="doConnect()">Connect</button>
+    <button onclick="doTopics()">List topics</button>
+
+    <label>Topic</label>
+    <input id="topic" />
+    <label>Limit</label>
+    <input id="limit" value="20" />
+    <button onclick="doMessages()">Fetch messages</button>
+
+    <pre id="out">ready.</pre>
+
+    <script>
+      const invoke = window.__TAURI__.core.invoke;
+      const out = (x) =>
+        (document.getElementById('out').textContent =
+          typeof x === 'string' ? x : JSON.stringify(x, null, 2));
+      const val = (id) => document.getElementById(id).value.trim();
+
+      function connection() {
+        const c = {
+          id: val('id'),
+          brokers: val('brokers').split(',').map((s) => s.trim()).filter(Boolean),
+        };
+        if (document.getElementById('ssl').checked) c.ssl = true;
+        const mech = val('mech');
+        if (mech) c.sasl = { mechanism: mech, username: val('user'), password: val('pass') };
+        return c;
+      }
+
+      async function run(promise) {
+        try {
+          out('working…');
+          out(await promise);
+        } catch (e) {
+          out('ERROR: ' + e);
+        }
+      }
+
+      function doConnect() {
+        run(invoke('connect', { connection: connection() }).then(() => 'connected ✓'));
+      }
+      function doTopics() {
+        run(invoke('get_topics', { connectionId: val('id') }));
+      }
+      function doMessages() {
+        run(
+          invoke('get_messages', {
+            connectionId: val('id'),
+            topic: val('topic'),
+            options: { limit: Number(val('limit')) || 20 },
+          })
+        );
+      }
+    </script>
+  </body>
+</html>
